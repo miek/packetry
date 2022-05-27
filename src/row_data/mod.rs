@@ -9,6 +9,7 @@ mod imp;
 use gtk::glib;
 use gtk::subclass::prelude::*;
 use crate::capture;
+use crate::tree_list_model::TreeNode;
 
 // Public part of the RowData type. This behaves like a normal gtk-rs-style GObject
 // binding
@@ -20,27 +21,20 @@ glib::wrapper! {
 }
 
 impl RowData {
-    pub fn new(item: Option<capture::Item>, summary: String, connectors: String)
-        -> RowData
+    pub fn new(node: TreeNode) -> RowData
     {
         let mut row: RowData =
             glib::Object::new(&[]).expect("Failed to create row data");
-        row.set_item(item);
-        row.set_summary(summary);
-        row.set_connectors(connectors);
+        row.set_node(node);
         row
     }
 
-    fn set_item(&mut self, item: Option<capture::Item>) {
-        self.imp().item.replace(item);
+    fn set_node(&mut self, node: TreeNode) {
+        self.imp().node.replace(Some(node));
     }
 
-    fn set_summary(&mut self, summary: String) {
-        self.imp().summary.replace(summary);
-    }
-
-    fn set_connectors(&mut self, connectors: String) {
-        self.imp().connectors.replace(connectors);
+    pub fn get_node(&self) -> TreeNode {
+        self.imp().node.borrow().unwrap()
     }
 }
 
@@ -69,28 +63,6 @@ pub trait GenericRowData<Item> {
         -> Result<u64, capture::CaptureError>;
     fn get_summary(&self) -> String;
     fn get_connectors(&self) -> Option<String>;
-}
-
-impl GenericRowData<capture::Item> for RowData {
-    const CONNECTORS: bool = true;
-
-    fn get_item(&self) -> Option<capture::Item> {
-        self.imp().item.borrow().clone()
-    }
-
-    fn child_count(&self, capture: &mut capture::Capture)
-        -> Result<u64, capture::CaptureError>
-    {
-        capture.item_count(&self.imp().item.borrow())
-    }
-
-    fn get_summary(&self) -> String {
-        self.imp().summary.borrow().clone()
-    }
-
-    fn get_connectors(&self) -> Option<String> {
-        Some(self.imp().connectors.borrow().clone())
-    }
 }
 
 impl GenericRowData<capture::DeviceItem> for DeviceRowData {

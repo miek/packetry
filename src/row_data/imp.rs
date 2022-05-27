@@ -1,14 +1,13 @@
 use gtk::glib::{self, subclass::prelude::*};
 use std::cell::RefCell;
 use crate::capture;
+use crate::tree_list_model::TreeNode;
 
 // The actual data structure that stores our values. This is not accessible
 // directly from the outside.
 #[derive(Default)]
 pub struct RowData {
-    pub summary: RefCell<String>,
-    pub connectors: RefCell<String>,
-    pub(super) item: RefCell<Option<capture::Item>>,
+    pub node: RefCell<Option<TreeNode>>,
 }
 
 #[derive(Default)]

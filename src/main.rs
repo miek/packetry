@@ -16,7 +16,6 @@ use gtk::{
     SignalListItemFactory,
     SingleSelection,
 };
-use row_data::GenericRowData;
 use expander::ExpanderWrapper;
 
 mod capture;
@@ -74,6 +73,8 @@ fn run() -> Result<(), PacketryError> {
             list_item.set_child(Some(&expander));
         });
 
+        let cap_arc = capture.clone();
+
         factory.connect_bind(move |_, list_item| {
             let row = list_item
                 .item()
@@ -91,14 +92,18 @@ fn run() -> Result<(), PacketryError> {
                 .downcast::<Label>()
                 .expect("The child must be a Label.");
 
-            let summary = row.get_summary();
+            let node = row.get_node();
+            let mut cap = cap_arc.lock().unwrap();
+
+            let summary = cap.get_summary(&node.item).unwrap();
             text_label.set_text(&summary);
 
             let expander_wrapper = container
                 .downcast::<ExpanderWrapper>()
                 .expect("The child must be a ExpanderWrapper.");
 
-            expander_wrapper.set_connectors(row.get_connectors());
+            let connectors = cap.get_connectors(&node.item).unwrap();
+            expander_wrapper.set_connectors(Some(connectors));
             let expander = expander_wrapper.expander();
             expander.set_visible(false);
             expander.set_expanded(false);

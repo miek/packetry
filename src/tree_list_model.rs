@@ -3,7 +3,12 @@ use std::sync::{Arc, Mutex};
 use gtk::subclass::prelude::*;
 use gtk::{gio, glib};
 
-use crate::capture::Capture;
+use crate::capture::{Capture, Item};
+
+#[derive(Copy, Clone)]
+pub struct TreeNode {
+    pub item: Item,
+}
 
 glib::wrapper! {
     pub struct TreeListModel(ObjectSubclass<imp::TreeListModel>) @implements gio::ListModel;
@@ -40,6 +45,8 @@ mod imp {
 
     use crate::capture::{Capture, CaptureError};
     use crate::row_data::RowData;
+
+    use super::TreeNode;
 
     #[derive(Error, Debug)]
     pub enum ModelError {
@@ -87,16 +94,10 @@ mod imp {
                 None => return None
             };
             let item = cap.get_item(&None, position as u64).ok()?;
-            let summary = match cap.get_summary(&item) {
-                Ok(string) => string,
-                Err(e) => format!("Error: {:?}", e)
+            let node = TreeNode {
+                item
             };
-            let connectors = match cap.get_connectors(&item) {
-                Ok(string) => string,
-                Err(e) => format!("Error: {:?}", e)
-            };
-            Some(RowData::new(Some(item), summary, connectors)
-                            .upcast::<glib::Object>())
+            Some(RowData::new(node).upcast::<glib::Object>())
         }
     }
 }
