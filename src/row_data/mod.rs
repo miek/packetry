@@ -6,6 +6,8 @@
 
 mod imp;
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use gtk::glib;
 use gtk::subclass::prelude::*;
 use crate::capture;
@@ -21,7 +23,7 @@ glib::wrapper! {
 }
 
 impl RowData {
-    pub fn new(node: TreeNode) -> RowData
+    pub fn new(node: Rc<RefCell<TreeNode>>) -> RowData
     {
         let mut row: RowData =
             glib::Object::new(&[]).expect("Failed to create row data");
@@ -29,12 +31,12 @@ impl RowData {
         row
     }
 
-    fn set_node(&mut self, node: TreeNode) {
+    fn set_node(&mut self, node: Rc<RefCell<TreeNode>>) {
         self.imp().node.replace(Some(node));
     }
 
-    pub fn get_node(&self) -> TreeNode {
-        self.imp().node.borrow().unwrap()
+    pub fn get_node(&self) -> Rc<RefCell<TreeNode>> {
+        self.imp().node.borrow().as_ref().unwrap().clone()
     }
 }
 

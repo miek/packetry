@@ -1,5 +1,6 @@
 use gtk::glib::{self, subclass::prelude::*};
 use std::cell::RefCell;
+use std::rc::Rc;
 use crate::capture;
 use crate::tree_list_model::TreeNode;
 
@@ -7,7 +8,7 @@ use crate::tree_list_model::TreeNode;
 // directly from the outside.
 #[derive(Default)]
 pub struct RowData {
-    pub node: RefCell<Option<TreeNode>>,
+    pub node: RefCell<Option<Rc<RefCell<TreeNode>>>>,
 }
 
 #[derive(Default)]

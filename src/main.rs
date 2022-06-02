@@ -95,18 +95,23 @@ fn run() -> Result<(), PacketryError> {
             let node = row.get_node();
             let mut cap = cap_arc.lock().unwrap();
 
-            let summary = cap.get_summary(&node.item).unwrap();
+            let summary = cap.get_summary(&node.borrow().item()).unwrap();
             text_label.set_text(&summary);
 
             let expander_wrapper = container
                 .downcast::<ExpanderWrapper>()
                 .expect("The child must be a ExpanderWrapper.");
 
-            let connectors = cap.get_connectors(&node.item).unwrap();
+            let connectors = cap.get_connectors(&node.borrow().item()).unwrap();
             expander_wrapper.set_connectors(Some(connectors));
             let expander = expander_wrapper.expander();
-            expander.set_visible(false);
-            expander.set_expanded(false);
+            expander.set_visible(true);
+            expander.set_expanded(gtk::subclass::prelude::ObjectSubclassIsExt::imp(&tree_model).expanded(node.clone()));
+            let model = tree_model.clone();
+            let handler = expander.connect_expanded_notify(move |expander| {
+                gtk::subclass::prelude::ObjectSubclassIsExt::imp(&model).set_expanded(node.clone(), expander.is_expanded());
+            });
+            expander_wrapper.set_handler(handler);
         });
 
         factory.connect_unbind(move |_, list_item| {

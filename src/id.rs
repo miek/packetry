@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::ops::{Add, AddAssign, Sub};
 use std::ops::Range;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Id<T> {
    _marker: PhantomData<T>,
    pub value: u64
