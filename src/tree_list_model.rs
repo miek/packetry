@@ -32,6 +32,10 @@ impl TreeNode {
         self.item.unwrap()
     }
 
+    pub fn is_expandable(&self) -> bool {
+        self.child_count != 0
+    }
+
     /// Position of this node in a list, relative to its parent node.
     pub fn relative_position(&self) -> u32 {
         if let Some(parent) = self.parent.as_ref() {
