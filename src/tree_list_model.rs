@@ -195,47 +195,50 @@ mod imp {
                 None => return None
             };
 
-            let mut parent = self.root.borrow().as_ref().unwrap().clone();
             // First check that the position is valid (must be within the root node's `child_count`).
-            if position < parent.borrow().child_count {
-                let mut relative_position = position;
-                'outer: loop {
-                    for (_, node_rc) in parent.clone().borrow().children.iter() {
-                        let node = node_rc.borrow();
-                        // If the position is before this node, break out of the loop to look it up.
-                        if relative_position < node.item_index {
-                            break;
-                        // If the position matches this node, return it.
-                        } else if relative_position == node.item_index {
-                            return Some(RowData::new(node_rc.clone()).upcast::<glib::Object>());
-                        // If the position is within this node's children, traverse down the tree and repeat.
-                        } else if relative_position <= node.item_index + node.child_count {
-                            parent = node_rc.clone();
-                            relative_position -= node.item_index + 1;
-                            continue 'outer;
-                        // Otherwise, if the position is after this node,
-                        // adjust the relative position for the node's children above.
-                        } else {
-                            relative_position -= node.child_count;
-                        }
-                    }
-
-                    // If we've broken out to this point, the node must be directly below `parent` - look it up.
-                    let item = cap.get_item(&parent.borrow().item, relative_position as u64).ok()?;
-                    let node = TreeNode {
-                        item: Some(item),
-                        expanded: false,
-                        parent: Some(Rc::downgrade(&parent)),
-                        item_index: relative_position,
-                        child_count: u32::try_from(cap.child_count(&item).unwrap()).unwrap(),
-                        children: Default::default(),
-                    };
-                    let rowdata = RowData::new(Rc::new(RefCell::new(node)));
-
-                    return Some(rowdata.upcast::<glib::Object>());
-                }
+            let mut parent = self.root.borrow().as_ref()?.clone();
+            if position >= parent.borrow().child_count {
+                return None
             }
-            None
+
+            let mut relative_position = position;
+            'outer: loop {
+                for (_, node_rc) in parent.clone().borrow().children.iter() {
+                    let node = node_rc.borrow();
+                    // If the position is before this node, break out of the loop to look it up.
+                    if relative_position < node.item_index {
+                        break;
+                    // If the position matches this node, return it.
+                    } else if relative_position == node.item_index {
+                        return Some(RowData::new(node_rc.clone()).upcast::<glib::Object>());
+                    // If the position is within this node's children, traverse down the tree and repeat.
+                    } else if relative_position <= node.item_index + node.child_count {
+                        parent = node_rc.clone();
+                        relative_position -= node.item_index + 1;
+                        continue 'outer;
+                    // Otherwise, if the position is after this node,
+                    // adjust the relative position for the node's children above.
+                    } else {
+                        relative_position -= node.child_count;
+                    }
+                }
+                break;
+            }
+
+            // If we've broken out to this point, the node must be directly below `parent` - look it up.
+            let item = cap.get_item(&parent.borrow().item, relative_position as u64).ok()?;
+            let child_count = cap.child_count(&item).ok()?;
+            let node = TreeNode {
+                item: Some(item),
+                expanded: false,
+                parent: Some(Rc::downgrade(&parent)),
+                item_index: relative_position,
+                child_count: child_count.try_into().ok()?,
+                children: Default::default(),
+            };
+            let rowdata = RowData::new(Rc::new(RefCell::new(node)));
+
+            Some(rowdata.upcast::<glib::Object>())
         }
     }
 }
