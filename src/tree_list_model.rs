@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use std::rc::{Rc, Weak};
 use std::sync::{Arc, Mutex};
 
+use gtk::prelude::ListModelExt;
 use gtk::subclass::prelude::*;
 use gtk::{gio, glib};
 
@@ -75,6 +76,51 @@ impl TreeListModel {
     fn set_root(&mut self, root: TreeNode) {
         self.imp().root.replace(Some(Rc::new(RefCell::new(root))));
     }
+
+    pub fn expanded(&self, node: &Rc<RefCell<TreeNode>>) -> bool {
+        let pos = node.borrow().item_index;
+        let expanded = node.borrow().parent.as_ref().unwrap().upgrade().unwrap().borrow().children.get(&pos).is_some();
+        expanded
+    }
+
+    pub fn set_expanded(&self, node: &Rc<RefCell<TreeNode>>, expanded: bool) {
+        let pos = node.borrow().item_index;
+        let current = self.expanded(node);
+        if current != expanded {
+            let count = node.borrow().child_count;
+            let mut position = node.borrow().relative_position();
+
+            // Add this node to the parent's list of expanded child nodes.
+            // TODO: split up this chain to be easier to follow & error handle
+            if expanded {
+                node.borrow().parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().children.insert(pos, node.clone());
+            } else {
+                node.borrow().parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().children.remove(&pos);
+            }
+
+            // Traverse back up the tree, modifying `child_count` for expanded/collapsed entries.
+            let mut current_node = node.clone();
+            while let Some(parent) = current_node.clone().borrow().parent.as_ref() {
+                if let Some(parent) = parent.upgrade() {
+                    if expanded {
+                        parent.borrow_mut().child_count += count;
+                    } else {
+                        parent.borrow_mut().child_count -= count;
+                    }
+                    current_node = parent;
+                    position += current_node.borrow().relative_position() + 1;
+                } else {
+                    break;
+                }
+            }
+
+            if expanded {
+                self.items_changed(position, 0, count);
+            } else {
+                self.items_changed(position, count, 0);
+            }
+        }
+    }
 }
 
 mod imp {
@@ -107,51 +153,6 @@ mod imp {
         pub(super) root: RefCell<Option<Rc<RefCell<TreeNode>>>>,
     }
 
-    impl TreeListModel {
-        pub fn expanded(&self, node: &Rc<RefCell<TreeNode>>) -> bool {
-            let pos = node.borrow().item_index;
-            let expanded = node.borrow().parent.as_ref().unwrap().upgrade().unwrap().borrow().children.get(&pos).is_some();
-            expanded
-        }
-        pub fn set_expanded(&self, node: &Rc<RefCell<TreeNode>>, expanded: bool) {
-            let pos = node.borrow().item_index;
-            let current = self.expanded(node);
-            if current != expanded {
-                let count = node.borrow().child_count;
-                let mut position = node.borrow().relative_position();
-
-                // Add this node to the parent's list of expanded child nodes.
-                // TODO: split up this chain to be easier to follow & error handle
-                if expanded {
-                    node.borrow().parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().children.insert(pos, node.clone());
-                } else {
-                    node.borrow().parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().children.remove(&pos);
-                }
-
-                // Traverse back up the tree, modifying `child_count` for expanded/collapsed entries.
-                let mut current_node = node.clone();
-                while let Some(parent) = current_node.clone().borrow().parent.as_ref() {
-                    if let Some(parent) = parent.upgrade() {
-                        if expanded {
-                            parent.borrow_mut().child_count += count;
-                        } else {
-                            parent.borrow_mut().child_count -= count;
-                        }
-                        current_node = parent;
-                        position += current_node.borrow().relative_position() + 1;
-                    } else {
-                        break;
-                    }
-                }
-
-                if expanded {
-                    self.instance().items_changed(position, 0, count);
-                } else {
-                    self.instance().items_changed(position, count, 0);
-                }
-            }
-        }
-    }
 
     #[glib::object_subclass]
     impl ObjectSubclass for TreeListModel {
