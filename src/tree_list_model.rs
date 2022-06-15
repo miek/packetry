@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::num::TryFromIntError;
 use std::rc::{Rc, Weak};
 use std::sync::{Arc, Mutex};
 
@@ -7,11 +8,17 @@ use gtk::prelude::ListModelExt;
 use gtk::subclass::prelude::*;
 use gtk::{gio, glib};
 
-use crate::capture::{Capture, Item};
+use crate::capture::{Capture, Item, CaptureError};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ModelError {
+    #[error(transparent)]
+    CaptureError(#[from] CaptureError),
+    #[error(transparent)]
+    RangeError(#[from] TryFromIntError),
+    #[error("Locking capture failed")]
+    LockError,
     #[error("Parent not set (attempting to expand the root node?)")]
     ParentNotSet,
     #[error("Node references a dropped parent")]
@@ -52,17 +59,20 @@ impl TreeNode {
     }
 
     /// Position of this node in a list, relative to its parent node.
-    pub fn relative_position(&self) -> u32 {
-        if let Some(parent) = self.parent.as_ref() {
-            if let Some(parent) = parent.upgrade() {
+    pub fn relative_position(&self) -> Result<u32, ModelError> {
+        match self.parent.as_ref() {
+            Some(parent_weak) => {
+                let parent_ref = parent_weak.upgrade().ok_or(ModelError::ParentDropped)?;
+                let parent = parent_ref.borrow();
                 // Sum up the `child_count`s of any expanded nodes before this one, and add to `item_index`.
-                return parent.borrow().children.iter()
+                Ok(parent.children.iter()
                     .take_while(|(&key, _)| key < self.item_index)
                     .map(|(_, node)| node.borrow().child_count)
-                    .sum::<u32>() + self.item_index;
-            }
+                    .sum::<u32>() + self.item_index)
+            },
+            None => Ok(0),
         }
-        0
+
     }
 }
 
@@ -71,22 +81,23 @@ glib::wrapper! {
 }
 
 impl TreeListModel {
-    pub fn new(capture: Arc<Mutex<Capture>>) -> Self {
+    pub fn new(capture: Arc<Mutex<Capture>>) -> Result<Self, ModelError> {
         let mut model: TreeListModel =
             glib::Object::new(&[]).expect("Failed to create TreeListModel");
         {
-            let mut cap = capture.lock().unwrap();
+            let mut cap = capture.lock().or(Err(ModelError::LockError))?;
+            let item_count = cap.item_count(&None)?;
             model.set_root(TreeNode{
                 item: None,
                 expanded: false,
                 parent: None,
                 item_index: 0,
-                child_count: u32::try_from(cap.item_count(&None).unwrap()).unwrap(),
+                child_count: u32::try_from(item_count)?,
                 children: Default::default(),
             });
         }
         model.set_capture(capture);
-        model
+        Ok(model)
     }
 
     fn set_capture(&mut self, capture: Arc<Mutex<Capture>>) {
@@ -120,7 +131,7 @@ impl TreeListModel {
             }
 
             // Traverse back up the tree, modifying `child_count` for expanded/collapsed entries.
-            let mut position = node.relative_position();
+            let mut position = node.relative_position()?;
             let mut current_node = node_ref.clone();
             while let Some(parent_weak) = current_node.clone().borrow().parent.as_ref() {
                 let parent = parent_weak.upgrade().ok_or(ModelError::ParentDropped)?;
@@ -130,7 +141,7 @@ impl TreeListModel {
                     parent.borrow_mut().child_count -= node.child_count;
                 }
                 current_node = parent;
-                position += current_node.borrow().relative_position() + 1;
+                position += current_node.borrow().relative_position()? + 1;
             }
 
             if expanded {
@@ -180,7 +191,10 @@ mod imp {
         }
 
         fn n_items(&self, _list_model: &Self::Type) -> u32 {
-            self.root.borrow().as_ref().unwrap().borrow().child_count
+            match self.root.borrow().as_ref() {
+                Some(node) => node.borrow().child_count,
+                None => 0,
+            }
         }
 
         fn item(&self, _list_model: &Self::Type, position: u32)

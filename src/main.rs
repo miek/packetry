@@ -64,7 +64,7 @@ fn run() -> Result<(), PacketryError> {
             .title("Packetry")
             .build();
 
-        let tree_model = TreeListModel::new(capture.clone());
+        let tree_model = TreeListModel::new(capture.clone()).unwrap();
         let selection_model = SingleSelection::new(Some(&tree_model));
         let factory = SignalListItemFactory::new();
 
