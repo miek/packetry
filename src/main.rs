@@ -109,7 +109,7 @@ fn run() -> Result<(), PacketryError> {
             expander.set_expanded(node.borrow().expanded());
             let model = tree_model.clone();
             let handler = expander.connect_expanded_notify(move |expander| {
-                model.set_expanded(&node, expander.is_expanded());
+                model.set_expanded(&node, expander.is_expanded()).unwrap();
             });
             expander_wrapper.set_handler(handler);
         });

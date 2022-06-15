@@ -8,6 +8,15 @@ use gtk::subclass::prelude::*;
 use gtk::{gio, glib};
 
 use crate::capture::{Capture, Item};
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum ModelError {
+    #[error("Parent not set (attempting to expand the root node?)")]
+    ParentNotSet,
+    #[error("Node references a dropped parent")]
+    ParentDropped,
+}
 
 #[derive(Debug)]
 pub struct TreeNode {
@@ -88,50 +97,51 @@ impl TreeListModel {
         self.imp().root.replace(Some(Rc::new(RefCell::new(root))));
     }
 
-    pub fn set_expanded(&self, node_ref: &Rc<RefCell<TreeNode>>, expanded: bool) {
+    pub fn set_expanded(&self, node_ref: &Rc<RefCell<TreeNode>>, expanded: bool) -> Result<(), ModelError> {
         {
             let node = node_ref.borrow();
-            let pos = node.item_index;
             let current = node.expanded();
             if current == expanded {
-                return;
+                return Ok(());
             }
 
-            let count = node.child_count;
-            let mut position = node.relative_position();
+            {
+                let node_parent_ref = node.parent
+                    .as_ref().ok_or(ModelError::ParentNotSet)?
+                    .upgrade().ok_or(ModelError::ParentDropped)?;
+                let mut node_parent = node_parent_ref.borrow_mut();
 
-            // Add this node to the parent's list of expanded child nodes.
-            // TODO: split up this chain to be easier to follow & error handle
-            if expanded {
-                node.parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().children.insert(pos, node_ref.clone());
-            } else {
-                node.parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().children.remove(&pos);
-            }
-
-            // Traverse back up the tree, modifying `child_count` for expanded/collapsed entries.
-            let mut current_node = node_ref.clone();
-            while let Some(parent) = current_node.clone().borrow().parent.as_ref() {
-                if let Some(parent) = parent.upgrade() {
-                    if expanded {
-                        parent.borrow_mut().child_count += count;
-                    } else {
-                        parent.borrow_mut().child_count -= count;
-                    }
-                    current_node = parent;
-                    position += current_node.borrow().relative_position() + 1;
+                // Add this node to the parent's list of expanded child nodes.
+                if expanded {
+                    node_parent.children.insert(node.item_index, node_ref.clone());
                 } else {
-                    break;
+                    node_parent.children.remove(&node.item_index);
                 }
             }
 
+            // Traverse back up the tree, modifying `child_count` for expanded/collapsed entries.
+            let mut position = node.relative_position();
+            let mut current_node = node_ref.clone();
+            while let Some(parent_weak) = current_node.clone().borrow().parent.as_ref() {
+                let parent = parent_weak.upgrade().ok_or(ModelError::ParentDropped)?;
+                if expanded {
+                    parent.borrow_mut().child_count += node.child_count;
+                } else {
+                    parent.borrow_mut().child_count -= node.child_count;
+                }
+                current_node = parent;
+                position += current_node.borrow().relative_position() + 1;
+            }
+
             if expanded {
-                self.items_changed(position, 0, count);
+                self.items_changed(position, 0, node.child_count);
             } else {
-                self.items_changed(position, count, 0);
+                self.items_changed(position, node.child_count, 0);
             }
         }
 
         node_ref.borrow_mut().expanded = expanded;
+        Ok(())
     }
 }
 
@@ -142,22 +152,11 @@ mod imp {
 
     use gtk::subclass::prelude::*;
     use gtk::{prelude::*, gio, glib};
-    use thiserror::Error;
 
-    use crate::capture::{Capture, CaptureError};
+    use crate::capture::Capture;
     use crate::row_data::RowData;
 
     use super::TreeNode;
-
-    #[derive(Error, Debug)]
-    pub enum ModelError {
-        #[error(transparent)]
-        CaptureError(#[from] CaptureError),
-        #[error("Capture not set")]
-        CaptureNotSet,
-        #[error("Locking capture failed")]
-        LockError,
-    }
 
     #[derive(Default)]
     pub struct TreeListModel {
