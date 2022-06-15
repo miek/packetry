@@ -1,5 +1,5 @@
-use std::cell::{Cell, RefCell};
-use std::collections::{LinkedList, BTreeMap};
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::rc::{Rc, Weak};
 use std::sync::{Arc, Mutex};
 
@@ -16,7 +16,10 @@ pub struct TreeNode {
     /// Index of this node below the parent Item.
     item_index: u32,
 
-    /// Total count of visible nodes below this node, recursively.
+    /// Total count of nodes below this node, recursively.
+    ///
+    /// Initially this is set to the number of direct descendants,
+    /// then increased/decreased as nodes are expanded/collapsed.
     child_count: u32,
 
     /// List of expanded child nodes directly below this node.
@@ -25,7 +28,7 @@ pub struct TreeNode {
 
 impl TreeNode {
     pub fn item(&self) -> Item {
-        self.item.clone().unwrap()
+        self.item.unwrap()
     }
 
     /// Position of this node in a list, relative to its parent node.
@@ -57,7 +60,7 @@ impl TreeListModel {
                 item: None,
                 parent: None,
                 item_index: 0,
-                child_count: u32::try_from(cap.item_count(&None).unwrap()).unwrap().into(),
+                child_count: u32::try_from(cap.item_count(&None).unwrap()).unwrap(),
                 children: Default::default(),
             });
         }
@@ -105,66 +108,45 @@ mod imp {
     }
 
     impl TreeListModel {
-        pub fn expanded(&self, node: Rc<RefCell<TreeNode>>) -> bool {
+        pub fn expanded(&self, node: &Rc<RefCell<TreeNode>>) -> bool {
             let pos = node.borrow().item_index;
             let expanded = node.borrow().parent.as_ref().unwrap().upgrade().unwrap().borrow().children.get(&pos).is_some();
             expanded
         }
-        pub fn set_expanded(&self, node: Rc<RefCell<TreeNode>>, expanded: bool) {
+        pub fn set_expanded(&self, node: &Rc<RefCell<TreeNode>>, expanded: bool) {
             let pos = node.borrow().item_index;
-            let current = self.expanded(node.clone());
+            let current = self.expanded(node);
             if current != expanded {
+                let count = node.borrow().child_count;
+                let mut position = node.borrow().relative_position();
+
+                // Add this node to the parent's list of expanded child nodes.
+                // TODO: split up this chain to be easier to follow & error handle
                 if expanded {
-                    let count = node.borrow().child_count;
-                    let mut position = node.borrow().relative_position();
-
-                    // Add this node to the parent's list of expanded child nodes.
-                    // TODO: split up this chain to be easier to follow & error handle
                     node.borrow().parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().children.insert(pos, node.clone());
+                } else {
+                    node.borrow().parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().children.remove(&pos);
+                }
 
-                    // Traverse back up the tree, increasing `child_count` to include the expanded entries.
-                    let mut current_node = node;
-                    loop {
-                        if let Some(parent) = current_node.clone().borrow().parent.as_ref() {
-                            if let Some(parent) = parent.upgrade() {
-                                parent.borrow_mut().child_count += count;
-                                current_node = parent;
-                                position += current_node.borrow().relative_position() + 1;
-                            } else {
-                                break;
-                            }
+                // Traverse back up the tree, modifying `child_count` for expanded/collapsed entries.
+                let mut current_node = node.clone();
+                while let Some(parent) = current_node.clone().borrow().parent.as_ref() {
+                    if let Some(parent) = parent.upgrade() {
+                        if expanded {
+                            parent.borrow_mut().child_count += count;
                         } else {
-                            // `parent` is `None` so we should be at the root node and can stop here.
-                            break;
+                            parent.borrow_mut().child_count -= count;
                         }
+                        current_node = parent;
+                        position += current_node.borrow().relative_position() + 1;
+                    } else {
+                        break;
                     }
+                }
 
+                if expanded {
                     self.instance().items_changed(position, 0, count);
                 } else {
-                    let count = node.borrow().child_count;
-                    let mut position = node.borrow().relative_position();
-
-                    // Remove this node from the parent's list of expanded child nodes.
-                    // TODO: split up this chain to be easier to follow & error handle
-                    node.borrow().parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().children.remove(&pos);
-
-                    // Traverse back up the tree, decreasing `child_count` to remove the collapsed entries.
-                    let mut current_node = node;
-                    loop {
-                        if let Some(parent) = current_node.clone().borrow().parent.as_ref() {
-                            if let Some(parent) = parent.upgrade() {
-                                parent.borrow_mut().child_count -= count;
-                                current_node = parent;
-                                position += current_node.borrow().relative_position() + 1;
-                            } else {
-                                break;
-                            }
-                        } else {
-                            // `parent` is `None` so we should be at the root node and can stop here.
-                            break;
-                        }
-                    }
-
                     self.instance().items_changed(position, count, 0);
                 }
             }
@@ -232,7 +214,7 @@ mod imp {
                         item: Some(item),
                         parent: Some(Rc::downgrade(&parent)),
                         item_index: relative_position,
-                        child_count: u32::try_from(cap.child_count(&item).unwrap()).unwrap().into(),
+                        child_count: u32::try_from(cap.child_count(&item).unwrap()).unwrap(),
                         children: Default::default(),
                     };
                     let rowdata = RowData::new(Rc::new(RefCell::new(node)));

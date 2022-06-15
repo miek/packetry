@@ -106,10 +106,10 @@ fn run() -> Result<(), PacketryError> {
             expander_wrapper.set_connectors(Some(connectors));
             let expander = expander_wrapper.expander();
             expander.set_visible(true);
-            expander.set_expanded(gtk::subclass::prelude::ObjectSubclassIsExt::imp(&tree_model).expanded(node.clone()));
+            expander.set_expanded(gtk::subclass::prelude::ObjectSubclassIsExt::imp(&tree_model).expanded(&node));
             let model = tree_model.clone();
             let handler = expander.connect_expanded_notify(move |expander| {
-                gtk::subclass::prelude::ObjectSubclassIsExt::imp(&model).set_expanded(node.clone(), expander.is_expanded());
+                gtk::subclass::prelude::ObjectSubclassIsExt::imp(&model).set_expanded(&node, expander.is_expanded());
             });
             expander_wrapper.set_handler(handler);
         });
