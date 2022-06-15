@@ -12,6 +12,8 @@ use crate::capture::{Capture, Item};
 #[derive(Debug)]
 pub struct TreeNode {
     item: Option<Item>,
+
+    expanded: bool,
     parent: Option<Weak<RefCell<TreeNode>>>,
 
     /// Index of this node below the parent Item.
@@ -30,6 +32,10 @@ pub struct TreeNode {
 impl TreeNode {
     pub fn item(&self) -> Item {
         self.item.unwrap()
+    }
+
+    pub fn expanded(&self) -> bool {
+        self.expanded
     }
 
     pub fn is_expandable(&self) -> bool {
@@ -63,6 +69,7 @@ impl TreeListModel {
             let mut cap = capture.lock().unwrap();
             model.set_root(TreeNode{
                 item: None,
+                expanded: false,
                 parent: None,
                 item_index: 0,
                 child_count: u32::try_from(cap.item_count(&None).unwrap()).unwrap(),
@@ -81,29 +88,28 @@ impl TreeListModel {
         self.imp().root.replace(Some(Rc::new(RefCell::new(root))));
     }
 
-    pub fn expanded(&self, node: &Rc<RefCell<TreeNode>>) -> bool {
-        let pos = node.borrow().item_index;
-        let expanded = node.borrow().parent.as_ref().unwrap().upgrade().unwrap().borrow().children.get(&pos).is_some();
-        expanded
-    }
+    pub fn set_expanded(&self, node_ref: &Rc<RefCell<TreeNode>>, expanded: bool) {
+        {
+            let node = node_ref.borrow();
+            let pos = node.item_index;
+            let current = node.expanded();
+            if current == expanded {
+                return;
+            }
 
-    pub fn set_expanded(&self, node: &Rc<RefCell<TreeNode>>, expanded: bool) {
-        let pos = node.borrow().item_index;
-        let current = self.expanded(node);
-        if current != expanded {
-            let count = node.borrow().child_count;
-            let mut position = node.borrow().relative_position();
+            let count = node.child_count;
+            let mut position = node.relative_position();
 
             // Add this node to the parent's list of expanded child nodes.
             // TODO: split up this chain to be easier to follow & error handle
             if expanded {
-                node.borrow().parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().children.insert(pos, node.clone());
+                node.parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().children.insert(pos, node_ref.clone());
             } else {
-                node.borrow().parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().children.remove(&pos);
+                node.parent.as_ref().unwrap().upgrade().unwrap().borrow_mut().children.remove(&pos);
             }
 
             // Traverse back up the tree, modifying `child_count` for expanded/collapsed entries.
-            let mut current_node = node.clone();
+            let mut current_node = node_ref.clone();
             while let Some(parent) = current_node.clone().borrow().parent.as_ref() {
                 if let Some(parent) = parent.upgrade() {
                     if expanded {
@@ -124,6 +130,8 @@ impl TreeListModel {
                 self.items_changed(position, count, 0);
             }
         }
+
+        node_ref.borrow_mut().expanded = expanded;
     }
 }
 
@@ -217,6 +225,7 @@ mod imp {
                     let item = cap.get_item(&parent.borrow().item, relative_position as u64).ok()?;
                     let node = TreeNode {
                         item: Some(item),
+                        expanded: false,
                         parent: Some(Rc::downgrade(&parent)),
                         item_index: relative_position,
                         child_count: u32::try_from(cap.child_count(&item).unwrap()).unwrap(),

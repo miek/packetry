@@ -106,7 +106,7 @@ fn run() -> Result<(), PacketryError> {
             expander_wrapper.set_connectors(Some(connectors));
             let expander = expander_wrapper.expander();
             expander.set_visible(node.borrow().is_expandable());
-            expander.set_expanded(tree_model.expanded(&node));
+            expander.set_expanded(node.borrow().expanded());
             let model = tree_model.clone();
             let handler = expander.connect_expanded_notify(move |expander| {
                 model.set_expanded(&node, expander.is_expanded());
