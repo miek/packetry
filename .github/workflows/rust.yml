@@ -64,6 +64,8 @@ jobs:
         if: matrix.os == 'macos-latest'
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          env-vars: "CARGO CC CFLAGS CXX CMAKE RUST ImageVersion"
 
       - name: Build
         uses: actions-rs/cargo@v1
